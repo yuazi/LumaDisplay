@@ -1,6 +1,7 @@
 // The Metal multiply-overlay technique is adapted from BrightIntosh by
 // Niklas Rousset and contributors, under GPL-3.0. See THIRD_PARTY_NOTICES.md.
 // LumaDisplay adds bounded dynamic gain, lifecycle ownership and error handling.
+// Modified 2026-10-15: full-screen panel presentation and transition handling.
 import AppKit
 import MetalKit
 import DisplayCore
@@ -42,7 +43,13 @@ final class HDRSurface: MTKView, MTKViewDelegate {
     required init(coder: NSCoder) { fatalError("Use init(size:)") }
 
     func draw(in view: MTKView) {
-        let available = Double(window?.screen?.maximumExtendedDynamicRangeColorComponentValue ?? 1)
+        // Space animations can briefly hide a healthy surface. Do not count
+        // that as a GPU failure or disable the user's requested boost.
+        guard let window, window.isVisible, window.isOnActiveSpace else {
+            missedFrames = 0
+            return
+        }
+        let available = Double(window.screen?.maximumExtendedDynamicRangeColorComponentValue ?? 1)
         appliedGain = HDRGain.effective(requested: requestedGain, currentHeadroom: available)
         clearColor = MTLClearColor(red: appliedGain, green: appliedGain, blue: appliedGain, alpha: 1)
         guard let pass = currentRenderPassDescriptor, let drawable = currentDrawable else {
@@ -84,30 +91,24 @@ final class HDRSurface: MTKView, MTKViewDelegate {
 
 final class HDRBoostWindow {
     let token = UUID()
-    let window: NSWindow
+    let window: DisplayOverlayPanel
     let surface: HDRSurface
     init(screen: NSScreen, gain: Double) throws {
         surface = try HDRSurface(size: screen.frame.size)
         surface.requestedGain = gain
-        window = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window = DisplayOverlayPanel(frame: screen.frame, level: NSWindow.Level(rawValue: Int(CGShieldingWindowLevel())))
         window.title = "LumaDisplay HDR overlay"
-        window.backgroundColor = .clear; window.isOpaque = false
-        window.hasShadow = false; window.ignoresMouseEvents = true
-        window.isReleasedWhenClosed = false; window.hidesOnDeactivate = false
-        window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        window.sharingType = .none
-        window.animationBehavior = .none
         window.contentView = surface
         // Keep an initial surface invisible until its first GPU submission has completed.
         window.alphaValue = 0.001
         surface.onReady = { [weak window] in window?.alphaValue = 1 }
-        window.orderFrontRegardless()
+        window.present(on: screen.frame)
         surface.draw()
     }
     func update(screen: NSScreen, gain: Double) {
-        if window.frame != screen.frame { window.setFrame(screen.frame, display: true) }
         surface.requestedGain = gain
+        window.present(on: screen.frame)
+        surface.draw()
     }
     func close() { surface.stop(); window.close() }
 }

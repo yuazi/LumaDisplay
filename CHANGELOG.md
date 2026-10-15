@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 preview
+
+- Fixed HDR boost disappearing when another app enters a full-screen Space, including Netflix in Comet.
+- HDR, dimming and warmth now use panels that follow full-screen apps without taking keyboard or mouse focus.
+- Reposition existing effects when switching Spaces or applications. Temporary Space transitions no longer count as missing HDR rendering surfaces.
+- Added overlay visibility diagnostics and a bounded full-screen smoke test.
+
 ## 1.0.0 preview
 
 First public release of LumaDisplay.

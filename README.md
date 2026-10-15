@@ -6,7 +6,7 @@
 
 Control your Mac's displays from a native dashboard or the menu bar. Adjust resolution, brightness and warmth, save your workspace as a preset, and use extra HDR brightness on compatible displays.
 
-[Download the preview](https://github.com/yuazi/LumaDisplay/releases/tag/v1.0.0) · [Report an issue](https://github.com/yuazi/LumaDisplay/issues) · [Contribute](CONTRIBUTING.md)
+[Download the preview](https://github.com/yuazi/LumaDisplay/releases/tag/v1.0.1) · [Report an issue](https://github.com/yuazi/LumaDisplay/issues) · [Contribute](CONTRIBUTING.md)
 
 ## Features
 
@@ -22,7 +22,7 @@ The app leaves display settings unchanged on launch. It has no analytics, networ
 
 ## Install
 
-The [v1.0.0 preview](https://github.com/yuazi/LumaDisplay/releases/tag/v1.0.0) includes an Apple silicon build for macOS 13 or later. Download the ZIP, extract it, and move `LumaDisplay.app` to Applications.
+The [v1.0.1 preview](https://github.com/yuazi/LumaDisplay/releases/tag/v1.0.1) includes an Apple silicon build for macOS 13 or later. Download the ZIP, extract it, and move `LumaDisplay.app` to Applications.
 
 The download is ad-hoc signed and has not been notarized by Apple. If macOS blocks it, you can build the app from source using the steps below. Intel builds are not included in this release; the source targets the build machine's architecture, but Intel hardware has not been tested.
 
@@ -46,6 +46,8 @@ You can also open `Package.swift` in Xcode. The project has no external Swift pa
 On a supported display, turn on **HDR boost**, then adjust **Desktop gain**. LumaDisplay uses a Metal overlay to amplify desktop content within the available extended dynamic range (EDR). It adapts the applied gain as that headroom changes.
 
 HDR boost starts off and turns off when the app quits or the Mac or display sleeps. Presets do not enable it. External HDR monitors must already have HDR enabled in macOS Display Settings; an SDR-only monitor cannot gain HDR capability through the app.
+
+The overlay follows other apps into full-screen Spaces. Version 1.0.1 fixes an issue where Netflix in Comet lost the boost on entering full screen and regained it on exit. Protected video and hardware-specific playback paths may still behave differently; keeping an overlay visible does not guarantee every video surface can be amplified.
 
 The percentages describe software gain, not measured nits. Boost can affect HDR highlights and increase power use. Turn it off for color-critical work and accurate HDR viewing. The feature is experimental; the display and macOS still determine the available output.
 
@@ -76,6 +78,14 @@ dist/LumaDisplay.app/Contents/MacOS/LumaDisplay --diagnose-hdr
 Both diagnostic commands read display information and exit. The seven tests cover rollback, confirmation and failure recovery, HDR gain limits, and preset persistence. XCTest requires a full Xcode installation on systems whose Command Line Tools do not include it. You can select an installed Xcode for a single invocation with `DEVELOPER_DIR`.
 
 For a rendering smoke test, `--verify-hdr` briefly applies 110% gain for three seconds, reports completed Metal frames, then disables boost and exits. It changes the display during the test.
+
+To check full-screen transitions, first disable HDR in any other running LumaDisplay instance, then run:
+
+```sh
+dist/LumaDisplay.app/Contents/MacOS/LumaDisplay --verify-hdr --verify-hdr-seconds 60
+```
+
+Enter and exit full screen in the affected app. The test reports whether its overlay is on the active Space and visible, whether it takes focus, and whether Metal frames continue to complete. It automatically disables its boost and exits after the requested duration (3–60 seconds). These diagnostics do not measure luminance or inspect video pixels.
 
 ## License and credits
 

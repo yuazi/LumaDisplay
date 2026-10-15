@@ -3,6 +3,7 @@ import AppKit
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     static let controller = DisplayController()
+    private var verificationTimer: Timer?
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.controller.refresh()
         if ProcessInfo.processInfo.arguments.contains("--diagnose") {
@@ -16,12 +17,33 @@ import AppKit
             return
         }
         if ProcessInfo.processInfo.arguments.contains("--verify-hdr") {
-            // Explicit opt-in smoke test: render a modest 110% gain for 3 seconds.
+            // A bounded, explicit smoke test. The optional duration allows manual
+            // Space/full-screen transitions while diagnostics report our own overlay.
+            let arguments = ProcessInfo.processInfo.arguments
+            var duration = 3.0
+            if let option = arguments.firstIndex(of: "--verify-hdr-seconds"),
+               arguments.indices.contains(option + 1),
+               let seconds = Double(arguments[option + 1]), seconds.isFinite {
+                duration = min(60, max(3, seconds))
+            }
+            NSApplication.shared.setActivationPolicy(.regular)
             if let display = Self.controller.displays.first(where: \.hdrSupported) {
                 Self.controller.setHDRGain(1.1, for: display.id)
                 Self.controller.setHDR(true, for: display.id)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            if duration > 3 {
+                let timer = Timer(timeInterval: 1, repeats: true) { _ in
+                    Task { @MainActor in
+                        print(Self.controller.hdrDiagnostics())
+                        fflush(stdout)
+                    }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                verificationTimer = timer
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+                self?.verificationTimer?.invalidate()
+                self?.verificationTimer = nil
                 print(Self.controller.hdrDiagnostics())
                 Self.controller.disableAllHDR()
                 NSApplication.shared.terminate(nil)

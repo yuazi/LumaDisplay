@@ -81,22 +81,15 @@ final class TintView: NSView {
 }
 
 final class ScreenOverlay {
-    let window: NSWindow
+    let window: DisplayOverlayPanel
     private let tint = TintView()
     init(frame: NSRect) {
-        window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-        window.isOpaque = false; window.backgroundColor = .clear
-        window.hasShadow = false; window.ignoresMouseEvents = true
-        window.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1)
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        window.isReleasedWhenClosed = false
-        window.sharingType = .none
+        window = DisplayOverlayPanel(frame: frame, level: NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1))
         window.contentView = tint
     }
     func update(frame: NSRect, dimming: Double, warmth: Double) {
-        window.setFrame(frame, display: true)
         tint.dimming = dimming; tint.warmth = warmth; tint.needsDisplay = true
-        if dimming < 0.999 || warmth > 0.001 { window.orderFrontRegardless() }
+        if dimming < 0.999 || warmth > 0.001 { window.present(on: frame) }
         else { window.orderOut(nil) }
     }
     func close() { window.close() }
@@ -135,6 +128,11 @@ final class ScreenOverlay {
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
             workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.disableAllHDR() }
+            })
+        }
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.restoreOverlayPlacement() }
             })
         }
         let previewTimer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -221,6 +219,15 @@ final class ScreenOverlay {
         let overlay = overlays[display.id] ?? ScreenOverlay(frame: display.frame)
         overlays[display.id] = overlay
         overlay.update(frame: display.frame, dimming: display.dimming, warmth: display.warmth)
+    }
+
+    private func restoreOverlayPlacement() {
+        // Reassert only existing effects; changing Space must never enable HDR.
+        for display in displays {
+            guard let screen = screen(for: display.id) else { continue }
+            hdrOverlays[display.id]?.update(screen: screen, gain: display.hdrGain)
+            overlays[display.id]?.update(frame: screen.frame, dimming: display.dimming, warmth: display.warmth)
+        }
     }
 
     func previewMode(_ modeID: String, for id: CGDirectDisplayID) {
@@ -440,12 +447,19 @@ final class ScreenOverlay {
 
     func hdrDiagnostics() -> String {
         let data: [[String: Any]] = displays.map { display in
-            let surface = hdrOverlays[display.id]?.surface
+            let overlay = hdrOverlays[display.id]
+            let surface = overlay?.surface
             return ["display": display.name, "supported": display.hdrSupported,
                     "currentHeadroom": display.edrCurrent, "potentialHeadroom": display.edrPotential,
                     "enabled": display.hdrEnabled, "requestedGain": display.hdrGain,
                     "appliedGain": surface?.appliedGain ?? 1,
                     "completedMetalFrames": surface?.completedFrames ?? 0,
+                    "overlayOnActiveSpace": overlay?.window.isOnActiveSpace ?? false,
+                    "overlayVisible": overlay?.window.isVisible ?? false,
+                    "overlayOcclusionVisible": overlay?.window.occlusionState.contains(.visible) ?? false,
+                    "overlayCanBecomeKey": overlay?.window.canBecomeKey ?? false,
+                    "overlayIsKey": overlay?.window.isKeyWindow ?? false,
+                    "applicationActive": NSApplication.shared.isActive,
                     "renderError": surface?.lastError as Any? ?? NSNull()]
         }
         let dataBytes = try? JSONSerialization.data(withJSONObject: data, options: [.prettyPrinted, .sortedKeys])
