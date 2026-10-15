@@ -66,7 +66,13 @@ import DisplayCore
         Self.controller.prepareToQuit() ? .terminateNow : .terminateCancel
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { sender.windows.first(where: { $0.canBecomeMain })?.makeKeyAndOrderFront(nil) }
+        // MenuBarExtra can be visible while the dashboard is closed. Its panel
+        // must not prevent a launcher or Dock click from restoring the dashboard.
+        if let dashboard = sender.windows.first(where: { $0.identifier?.rawValue == "main" }) {
+            if dashboard.isMiniaturized { dashboard.deminiaturize(nil) }
+            dashboard.makeKeyAndOrderFront(nil)
+            sender.activate(ignoringOtherApps: true)
+        }
         return true
     }
 }

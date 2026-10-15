@@ -26,6 +26,7 @@ struct BrandMark: View {
 }
 
 struct Dashboard: View {
+    private let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
     @EnvironmentObject var controller: DisplayController
     @ViewState private var page = "displays"
     @ViewState private var showingSave = false
@@ -97,12 +98,12 @@ struct Dashboard: View {
                 Text("Changes stay on your Mac.").font(.system(size: 10)).foregroundStyle(Palette.muted)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12)).padding(14)
             Button { showingAbout.toggle() } label: {
-                HStack { Image(systemName: "info.circle"); Text("About LumaDisplay"); Spacer(); Text("1.0").foregroundStyle(Palette.muted) }
+                HStack { Image(systemName: "info.circle"); Text("About LumaDisplay"); Spacer(); Text(appVersion).foregroundStyle(Palette.muted) }
                     .font(.system(size: 10)).foregroundStyle(Palette.muted)
             }.buttonStyle(.plain).padding(.horizontal, 24).padding(.bottom, 22)
                 .popover(isPresented: $showingAbout) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("LumaDisplay 1.0").font(.headline)
+                        Text("LumaDisplay \(appVersion)").font(.headline)
                         Text("Display controls for macOS, built with SwiftUI and native display APIs.")
                         Text("Supports existing display modes, hardware brightness when available, experimental HDR boost, software dimming, warmth, and local presets. DDC and virtual displays are not included.").foregroundStyle(.secondary)
                         Text("HDR rendering uses BrightIntosh’s Metal technique. LumaDisplay is GPL-3.0 licensed; see the included source and notices.").font(.caption).foregroundStyle(.secondary)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 preview
+
+- Added an install command that moves the build into Applications, registers it with macOS, and archives the previous installation to avoid duplicate app bundles.
+- The dashboard and About popover now show the installed version instead of a hard-coded 1.0 label.
+- Reopening the app from a launcher restores its dashboard even when the menu-bar panel is visible.
+
 ## 1.1.0 preview
 
 - Added a unified brightness slider with upscaling above 100%.

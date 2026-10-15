@@ -6,7 +6,7 @@
 
 Control your Mac's displays from a native dashboard or the menu bar. Adjust resolution, brightness and warmth, save your workspace as a preset, and use extra HDR brightness on compatible displays.
 
-[Download the preview](https://github.com/yuazi/LumaDisplay/releases/tag/v1.1.0) · [Report an issue](https://github.com/yuazi/LumaDisplay/issues) · [Contribute](CONTRIBUTING.md)
+[Download the preview](https://github.com/yuazi/LumaDisplay/releases/tag/v1.1.1) · [Report an issue](https://github.com/yuazi/LumaDisplay/issues) · [Contribute](CONTRIBUTING.md)
 
 ## Features
 
@@ -22,7 +22,7 @@ Upscaling starts off. If a previous direct session was interrupted, the app rest
 
 ## Install
 
-The [v1.1.0 preview](https://github.com/yuazi/LumaDisplay/releases/tag/v1.1.0) includes an Apple silicon build for macOS 13 or later. Download the ZIP, extract it, and move `LumaDisplay.app` to Applications.
+The [v1.1.1 preview](https://github.com/yuazi/LumaDisplay/releases/tag/v1.1.1) includes an Apple silicon build for macOS 13 or later. Download the ZIP, extract it, and move `LumaDisplay.app` to Applications.
 
 The download is ad-hoc signed and has not been notarized by Apple. If macOS blocks it, you can build the app from source using the steps below. Intel builds are not included in this release; the source targets the build machine's architecture, but Intel hardware has not been tested.
 
@@ -36,10 +36,13 @@ Install Xcode or Apple's Command Line Tools with Swift 5.9 or later, then run:
 git clone https://github.com/yuazi/LumaDisplay.git
 cd LumaDisplay
 ./Scripts/build-app.sh
-open dist/LumaDisplay.app
+./Scripts/install-app.sh
+open /Applications/LumaDisplay.app
 ```
 
 You can also open `Package.swift` in Xcode. The project has no external Swift package dependencies. The build script compiles the app, generates its icon, includes the license notices, and signs the local bundle.
+
+Quit LumaDisplay before installing an update. The install script moves the build into `/Applications`, registers it with macOS, and saves any previous installation as a ZIP under `dist/install-backups`. This keeps one runnable copy and lets application launchers such as Raycast find it. If you cannot write to `/Applications`, pass `~/Applications` to the script instead. Development checks below use a fresh build in `dist` before installation.
 
 ## Brightness upscaling
 
