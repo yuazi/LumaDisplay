@@ -95,11 +95,13 @@ struct DisplayDetail: View {
 
     private var brightnessCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            cardHeading("Brightness", subtitle: display.brightness != nil ? "Find your comfortable level." : "Software dimming for this display.", icon: "sun.max")
-            if let brightness = display.brightness {
-                sliderRow("Hardware brightness", value: brightness, range: 0.05...1, low: "sun.min", high: "sun.max.fill") { controller.setBrightness($0, for: display.id) }
-            } else {
-                Label("Hardware control unavailable", systemImage: "info.circle").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            cardHeading("Brightness", subtitle: "One slider from dim to extra bright.", icon: "sun.max")
+            sliderRow("Brightness", value: display.combinedBrightness,
+                      range: (display.brightness != nil ? 0.05 : 0.2)...(display.upscalingSupported ? (display.upscalingMethod == .direct ? max(1.01, display.directMaximumGain) : 2) : 1),
+                      low: "sun.min", high: "sun.max.fill") { controller.setCombinedBrightness($0, for: display.id) }
+            if display.upscalingSupported {
+                Text("Above 100% uses \(display.upscalingMethod.title).")
+                    .font(.system(size: 10)).foregroundStyle(Palette.muted)
             }
             sliderRow("Software brightness", value: display.dimming, range: 0.2...1, low: "moon", high: "sun.max") { controller.setDimming($0, for: display.id) }
         }.padding(21).frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading).card()
@@ -108,30 +110,36 @@ struct DisplayDetail: View {
     private var hdrCard: some View {
         VStack(alignment: .leading, spacing: 17) {
             HStack(alignment: .center) {
-                cardHeading("HDR extra brightness", subtitle: display.hdrSupported ? "Go beyond the normal desktop brightness." : "This display is currently using an SDR range.", icon: "sun.max.trianglebadge.exclamationmark")
+                cardHeading("Brightness upscaling", subtitle: display.upscalingSupported ? "Go beyond the normal desktop brightness." : "This display is currently using an SDR range.", icon: "sun.max.trianglebadge.exclamationmark")
                 Text("EXPERIMENTAL").font(.system(size: 8, weight: .semibold)).tracking(1).foregroundStyle(Palette.accent).padding(.horizontal, 9).padding(.vertical, 6).background(Palette.accent.opacity(0.08), in: Capsule())
-                Toggle("HDR boost", isOn: Binding(get: { display.hdrEnabled }, set: { controller.setHDR($0, for: display.id) }))
-                    .toggleStyle(.switch).labelsHidden().disabled(!display.hdrSupported)
+                Toggle("Brightness upscaling", isOn: Binding(get: { display.hdrEnabled }, set: { controller.setHDR($0, for: display.id) }))
+                    .toggleStyle(.switch).labelsHidden().disabled(!display.upscalingSupported)
             }
-            if display.hdrSupported {
+            if display.upscalingSupported {
+                Picker("Upscaling method", selection: Binding(get: { display.upscalingMethod }, set: { controller.setUpscalingMethod($0, for: display.id) })) {
+                    Text("HDR overlay").tag(UpscalingMethod.hdrOverlay).disabled(!display.hdrSupported)
+                    Text("Direct XDR").tag(UpscalingMethod.direct).disabled(!display.directSupported)
+                }.pickerStyle(.segmented)
                 HStack(spacing: 18) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text("Desktop gain").foregroundStyle(Palette.muted)
+                            Text("Upscaling level").foregroundStyle(Palette.muted)
                             Spacer()
                             Text("\(Int((display.hdrGain * 100).rounded()))%").monospacedDigit()
                         }.font(.system(size: 11))
-                        Slider(value: Binding(get: { display.hdrGain }, set: { controller.setHDRGain($0, for: display.id) }), in: 1...2, step: 0.01)
-                            .disabled(!display.hdrEnabled).accessibilityLabel("HDR desktop gain")
-                        HStack { Text("100% · Standard"); Spacer(); Text("200% · Extra bright") }.font(.system(size: 9)).foregroundStyle(Palette.muted)
+                        Slider(value: Binding(get: { display.hdrGain }, set: { controller.setHDRGain($0, for: display.id) }), in: 1...(display.upscalingMethod == .direct ? max(1.01, display.directMaximumGain) : 2), step: 0.01)
+                            .disabled(!display.hdrEnabled).accessibilityLabel("Brightness upscaling level")
+                        HStack { Text("100% · Standard"); Spacer(); Text("Extra bright") }.font(.system(size: 9)).foregroundStyle(Palette.muted)
                     }
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(display.hdrEnabled ? "\(Int((display.hdrApplied * 100).rounded()))% applied" : "Boost is off")
+                        Text(display.hdrEnabled ? "\(Int((display.hdrApplied * 100).rounded()))% \(display.upscalingMethod == .direct ? "target" : "applied")" : "Upscaling is off")
                             .font(.system(size: 12, weight: .medium)).foregroundStyle(display.hdrEnabled ? Palette.green : Palette.muted)
                         Text(String(format: "%.2f× current headroom", display.edrCurrent)).font(.system(size: 10)).foregroundStyle(Palette.muted)
                     }.frame(width: 148, alignment: .leading).padding(.leading, 5)
                 }
-                Text("Uses HDR headroom for desktop content. May affect HDR highlights and use more power. Turn off for color-critical work; resets on quit or sleep.")
+                Text(display.upscalingMethod == .direct
+                     ? "Controls the built-in XDR backlight. Automatic brightness pauses while enabled. Original settings restore on disable, quit, or sleep. Target percentages are not measured luminance."
+                     : "Uses HDR headroom for desktop content. Available gain follows the display’s current headroom. Restores standard brightness on disable, quit, or sleep.")
                     .font(.system(size: 10)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Requires an XDR display or a compatible external display with HDR enabled in macOS. Ordinary SDR displays cannot be boosted.")

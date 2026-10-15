@@ -33,6 +33,11 @@ struct DisplayDevice: Identifiable {
     var hdrEnabled: Bool = false
     var hdrGain: Double = 1.25
     var hdrApplied: Double = 1
+    var upscalingMethod: UpscalingMethod = .hdrOverlay
+    var directMaximumGain: Double = 1
+    var directSupported: Bool { directMaximumGain > 1.01 }
+    var upscalingSupported: Bool { hdrSupported || directSupported }
+    var combinedBrightness: Double { hdrEnabled ? hdrGain : brightness ?? dimming }
     var hdrSupported: Bool { edrPotential > 1.01 }
 }
 
@@ -56,8 +61,14 @@ final class HardwareBrightness {
         return Double(value)
     }
     func set(_ display: CGDirectDisplayID, value: Double) throws {
+        try restore(display, value: min(1, max(0.05, value)))
+    }
+    /// Restoration must preserve even an original system brightness below
+    /// the app slider's minimum; the UI floor is not a hardware constraint.
+    func restore(_ display: CGDirectDisplayID, value: Double) throws {
+        guard value.isFinite, (0...1).contains(value) else { throw BrightnessError.invalidRange }
         guard let write else { throw DisplayFailure.message("Hardware brightness is unavailable for this display.") }
-        let result = write(display, Float(min(1, max(0.05, value))))
+        let result = write(display, Float(value))
         guard result == 0 else { throw DisplayFailure.message("The display rejected the brightness change (\(result)). Use software dimming instead.") }
     }
 }
@@ -105,6 +116,10 @@ final class ScreenOverlay {
     @Published var previewPending = false
     @Published var rollbackFailed = false
     private let brightness = HardwareBrightness()
+    private lazy var directBrightness = DirectBrightness(hardware: brightness)
+    private var directPulse: HDRActivityPulse?
+    private var directGeneration = UUID()
+    private var overlayBrightnessSnapshots: [CGDirectDisplayID: Double] = [:]
     private var overlays: [CGDirectDisplayID: ScreenOverlay] = [:]
     private var hdrOverlays: [CGDirectDisplayID: HDRBoostWindow] = [:]
     private var workspaceObservers: [NSObjectProtocol] = []
@@ -147,6 +162,7 @@ final class ScreenOverlay {
         displays = NSScreen.screens.compactMap { screen in
             guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
             let id = number.uint32Value
+            let directSupport = directBrightness.support(for: id)
             guard let native = CGDisplayCopyDisplayMode(id) else { return nil }
             let uuid = CGDisplayCreateUUIDFromDisplayID(id).map { CFUUIDCreateString(nil, $0.takeRetainedValue()) as String } ?? "display-\(id)"
             if hdrOverlays[id] != nil && old[uuid]?.id != id { hdrOverlays.removeValue(forKey: id)?.close() }
@@ -170,13 +186,30 @@ final class ScreenOverlay {
                                  dimming: old[uuid]?.dimming ?? 1, warmth: old[uuid]?.warmth ?? 0,
                                  edrPotential: Double(screen.maximumPotentialExtendedDynamicRangeColorComponentValue),
                                  edrCurrent: Double(screen.maximumExtendedDynamicRangeColorComponentValue),
-                                 hdrEnabled: hdrOverlays[id] != nil,
-                                 hdrGain: old[uuid]?.hdrGain ?? 1.25, hdrApplied: hdrOverlays[id]?.surface.appliedGain ?? 1)
+                                 hdrEnabled: hdrOverlays[id] != nil || directBrightness.activeDisplayID == id,
+                                 hdrGain: old[uuid]?.hdrGain ?? 1.25, hdrApplied: hdrOverlays[id]?.surface.appliedGain ?? 1,
+                                 upscalingMethod: old[uuid]?.upscalingMethod ?? .hdrOverlay,
+                                 directMaximumGain: directSupport?.maximumGain ?? 1)
         }
+        let recoveringDirect = directBrightness.needsRestore && !directBrightness.active
+        do {
+            try directBrightness.recoverIfNeeded(displays: displays.map { ($0.id, $0.uuid) })
+            if recoveringDirect && !directBrightness.needsRestore {
+                for index in displays.indices { displays[index].directMaximumGain = directBrightness.support(for: displays[index].id)?.maximumGain ?? 1 }
+            }
+        }
+        catch { self.error = error.localizedDescription }
         let connected = Set(displays.map(\.id))
+        if let id = directBrightness.activeDisplayID, !connected.contains(id) {
+            do { try directBrightness.disable() } catch { self.error = error.localizedDescription }
+            directPulse?.close()
+        }
         for id in Array(overlays.keys) where !connected.contains(id) { overlays.removeValue(forKey: id)?.close() }
         for id in Array(hdrOverlays.keys) where !connected.contains(id) { hdrOverlays.removeValue(forKey: id)?.close() }
-        for display in displays where display.hdrEnabled {
+        // An offline output must never leave a numeric-ID snapshot that could
+        // later be applied to a different monitor reusing that ID.
+        for id in Array(overlayBrightnessSnapshots.keys) where !connected.contains(id) { overlayBrightnessSnapshots.removeValue(forKey: id) }
+        for display in displays where display.hdrEnabled && display.upscalingMethod == .hdrOverlay {
             if let screen = screen(for: display.id), display.hdrSupported {
                 hdrOverlays[display.id]?.update(screen: screen, gain: display.hdrGain)
             } else { setHDR(false, for: display.id) }
@@ -187,6 +220,8 @@ final class ScreenOverlay {
 
     func setBrightness(_ value: Double, for id: CGDirectDisplayID) {
         guard let index = displays.firstIndex(where: { $0.id == id }) else { return }
+        if displays[index].hdrEnabled { setHDR(false, for: id) }
+        guard !directBrightness.needsRestore, overlayBrightnessSnapshots[id] == nil else { return }
         do {
             try brightness.set(id, value: value)
             displays[index].brightness = brightness.get(id) ?? min(1, max(0.05, value))
@@ -226,6 +261,7 @@ final class ScreenOverlay {
         for display in displays {
             guard let screen = screen(for: display.id) else { continue }
             hdrOverlays[display.id]?.update(screen: screen, gain: display.hdrGain)
+            if directBrightness.activeDisplayID == display.id { directPulse?.pulse(on: screen) }
             overlays[display.id]?.update(frame: screen.frame, dimming: display.dimming, warmth: display.warmth)
         }
     }
@@ -238,6 +274,8 @@ final class ScreenOverlay {
     }
 
     private func beginPreview(_ proposed: [String: CGDisplayMode], appearance: [SavedDisplay]? = nil) {
+        disableAllHDR()
+        guard !directBrightness.needsRestore, overlayBrightnessSnapshots.isEmpty else { return }
         // Capture all displays because a configuration transaction can affect more than one output.
         let original = Dictionary(uniqueKeysWithValues: displays.map { ($0.uuid, $0.current.native) })
         do {
@@ -318,9 +356,30 @@ final class ScreenOverlay {
                     displays[index].edrCurrent = Double(screen.maximumExtendedDynamicRangeColorComponentValue)
                     displays[index].edrPotential = Double(screen.maximumPotentialExtendedDynamicRangeColorComponentValue)
                 }
-                displays[index].hdrApplied = hdrOverlays[id]?.surface.appliedGain ?? 1
+                if directBrightness.activeDisplayID == id {
+                    displays[index].hdrApplied = displays[index].hdrGain
+                } else { displays[index].hdrApplied = hdrOverlays[id]?.surface.appliedGain ?? 1 }
             }
         }
+        if ticks % 12 == 0 {
+            maintainDirectBrightness()
+            for index in displays.indices where !displays[index].hdrEnabled {
+                displays[index].directMaximumGain = directBrightness.support(for: displays[index].id)?.maximumGain ?? 1
+            }
+            restoreOverlayPlacement()
+        }
+    }
+
+    private func maintainDirectBrightness() {
+        guard let id = directBrightness.activeDisplayID, let index = displays.firstIndex(where: { $0.id == id }) else { return }
+        do {
+            if try !directBrightness.maintain(gain: displays[index].hdrGain) {
+                directGeneration = UUID(); directPulse?.close()
+                displays[index].hdrEnabled = false; displays[index].hdrApplied = 1
+                displays[index].brightness = brightness.get(id)
+                status = "Direct upscaling stopped after the system brightness or power limit changed."
+            }
+        } catch { setHDR(false, for: id); self.error = error.localizedDescription }
     }
 
     func savePreset(name: String) {
@@ -388,7 +447,7 @@ final class ScreenOverlay {
         if preview.isPending && !revertPreview() { return false }
         for overlay in overlays.values { overlay.close() }
         disableAllHDR()
-        return true
+        return !directBrightness.needsRestore && overlayBrightnessSnapshots.isEmpty
     }
 
     func diagnostics() -> String {
@@ -409,17 +468,59 @@ final class ScreenOverlay {
     func setHDR(_ enabled: Bool, for id: CGDirectDisplayID) {
         guard let index = displays.firstIndex(where: { $0.id == id }) else { return }
         if !enabled {
+            directGeneration = UUID()
             hdrOverlays.removeValue(forKey: id)?.close()
+            do {
+                if directBrightness.activeDisplayID == id || directBrightness.needsRestore { try directBrightness.disable() }
+                if let original = overlayBrightnessSnapshots[id] {
+                    // Preserve a brightness-key adjustment made outside the app.
+                    guard let current = brightness.get(id) else { throw DisplayFailure.message("Hardware brightness could not be restored. Retry Reset all effects.") }
+                    if abs(current - 1) < 0.002 { try brightness.restore(id, value: original) }
+                    overlayBrightnessSnapshots.removeValue(forKey: id)
+                }
+            } catch { self.error = error.localizedDescription }
+            directPulse?.close()
             displays[index].hdrEnabled = false; displays[index].hdrApplied = 1
+            displays[index].brightness = brightness.get(id)
             status = "HDR boost off. Standard desktop brightness restored."
             return
         }
-        guard hdrOverlays[id] == nil else { return }
+        guard !displays[index].hdrEnabled else { return }
+        guard !directBrightness.needsRestore else { error = "Reset all effects to restore the previous direct brightness session first."; return }
+        if displays[index].upscalingMethod == .direct {
+            guard let screen = screen(for: id), displays[index].directSupported else {
+                error = directBrightness.lastRecoveryError ?? "Direct XDR upscaling requires a supported built-in Apple display."
+                return
+            }
+            do {
+                let gain = min(displays[index].directMaximumGain, displays[index].hdrGain)
+                try directBrightness.enable(id: id, uuid: displays[index].uuid, gain: gain)
+                displays[index].hdrGain = gain
+                displays[index].hdrEnabled = true; displays[index].hdrApplied = gain
+                displays[index].brightness = brightness.get(id)
+                directPulse = directPulse ?? HDRActivityPulse()
+                directPulse?.pulse(on: screen)
+                // macOS can asynchronously reapply defaults just after a
+                // preset switch. Retry once without waiting for the watchdog.
+                directGeneration = UUID()
+                let generation = directGeneration
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self, self.directGeneration == generation else { return }
+                    self.maintainDirectBrightness()
+                }
+                status = "Direct XDR upscaling enabled. Original settings will be restored when it stops."
+            } catch { self.error = error.localizedDescription }
+            return
+        }
         guard displays[index].hdrSupported, let screen = screen(for: id) else {
             error = "This display does not currently expose HDR support. For an external HDR display, enable HDR in macOS Display Settings first."
             return
         }
         do {
+            if let original = brightness.get(id) {
+                overlayBrightnessSnapshots[id] = original
+                try brightness.set(id, value: 1)
+            }
             let overlay = try HDRBoostWindow(screen: screen, gain: displays[index].hdrGain)
             let token = overlay.token
             overlay.surface.onFailure = { [weak self] message in
@@ -428,21 +529,61 @@ final class ScreenOverlay {
             }
             hdrOverlays[id] = overlay
             displays[index].hdrEnabled = true
+            displays[index].brightness = brightness.get(id)
             status = "HDR boost enabled. Gain is limited by current display headroom."
-        } catch { self.error = error.localizedDescription }
+        } catch { setHDR(false, for: id); self.error = error.localizedDescription }
     }
 
     func setHDRGain(_ gain: Double, for id: CGDirectDisplayID) {
         guard gain.isFinite, let index = displays.firstIndex(where: { $0.id == id }) else { return }
-        let bounded = min(2, max(1, gain))
+        let maximum = displays[index].upscalingMethod == .direct ? displays[index].directMaximumGain : 2
+        let bounded = min(maximum, max(1, gain))
         displays[index].hdrGain = bounded
         hdrOverlays[id]?.surface.requestedGain = bounded
+        if directBrightness.activeDisplayID == id {
+            do { try directBrightness.update(gain: bounded); displays[index].hdrApplied = bounded }
+            catch { setHDR(false, for: id); self.error = error.localizedDescription }
+        }
+    }
+
+    func setUpscalingMethod(_ method: UpscalingMethod, for id: CGDirectDisplayID) {
+        guard let index = displays.firstIndex(where: { $0.id == id }), displays[index].upscalingMethod != method else { return }
+        guard method == .direct ? displays[index].directSupported : displays[index].hdrSupported else {
+            error = "This upscaling method is unavailable on the selected display."
+            return
+        }
+        let wasEnabled = displays[index].hdrEnabled
+        setHDR(false, for: id)
+        guard !directBrightness.needsRestore, overlayBrightnessSnapshots[id] == nil else { return }
+        displays[index].upscalingMethod = method
+        if wasEnabled { setHDR(true, for: id) }
+    }
+
+    func setCombinedBrightness(_ value: Double, for id: CGDirectDisplayID) {
+        guard value.isFinite, let index = displays.firstIndex(where: { $0.id == id }) else { return }
+        let maximum = displays[index].upscalingSupported ? (displays[index].upscalingMethod == .direct ? displays[index].directMaximumGain : 2) : 1
+        let bounded = BrightnessScale.bounded(value, maximum: maximum)
+        if bounded > 1 {
+            setHDRGain(bounded, for: id)
+            setHDR(true, for: id)
+            if displays[index].hdrEnabled { setDimming(1, for: id) }
+        } else {
+            setHDR(false, for: id)
+            if displays[index].brightness != nil { setBrightness(bounded, for: id); setDimming(1, for: id) }
+            else { setDimming(bounded, for: id) }
+        }
     }
 
     func disableAllHDR() {
-        for overlay in hdrOverlays.values { overlay.close() }
-        hdrOverlays.removeAll()
-        for index in displays.indices { displays[index].hdrEnabled = false; displays[index].hdrApplied = 1 }
+        for display in displays where display.hdrEnabled || overlayBrightnessSnapshots[display.id] != nil { setHDR(false, for: display.id) }
+        if directBrightness.active {
+            do { try directBrightness.disable() } catch { self.error = error.localizedDescription }
+        }
+        if directBrightness.needsRestore {
+            do { try directBrightness.recoverIfNeeded(displays: displays.map { ($0.id, $0.uuid) }) }
+            catch { self.error = error.localizedDescription }
+        }
+        directPulse?.close()
     }
 
     func hdrDiagnostics() -> String {
@@ -452,7 +593,14 @@ final class ScreenOverlay {
             return ["display": display.name, "supported": display.hdrSupported,
                     "currentHeadroom": display.edrCurrent, "potentialHeadroom": display.edrPotential,
                     "enabled": display.hdrEnabled, "requestedGain": display.hdrGain,
-                    "appliedGain": surface?.appliedGain ?? 1,
+                    "method": display.upscalingMethod.rawValue,
+                    "directSupported": display.directSupported, "directMaximumGain": display.directMaximumGain,
+                    "directTargetNits": directBrightness.activeDisplayID == display.id ? (directBrightness.targetNits as Any? ?? NSNull()) : NSNull(),
+                    "directRecoveryPending": directBrightness.needsRestore,
+                    "directError": directBrightness.lastRecoveryError as Any? ?? NSNull(),
+                    "driverState": directBrightness.diagnostics(for: display.id),
+                    "controllerError": error as Any? ?? NSNull(),
+                    "appliedGain": display.upscalingMethod == .direct ? display.hdrApplied : surface?.appliedGain ?? 1,
                     "completedMetalFrames": surface?.completedFrames ?? 0,
                     "overlayOnActiveSpace": overlay?.window.isOnActiveSpace ?? false,
                     "overlayVisible": overlay?.window.isVisible ?? false,

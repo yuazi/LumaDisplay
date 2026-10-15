@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 preview
+
+- Added a unified brightness slider with upscaling above 100%.
+- Added a choice of HDR overlay and experimental Direct XDR upscaling on supported built-in displays.
+- Direct mode preserves display properties, preset, automatic brightness and hardware brightness, with transactional rollback and recovery after an interrupted session.
+- Added periodic recovery, fullscreen activity pulses and a bounded direct-mode smoke test.
+- Added seven tests for brightness units, physical limits, checkpoint failures and restoration retries.
+
 ## 1.0.1 preview
 
 - Fixed HDR boost disappearing when another app enters a full-screen Space, including Netflix in Comet.
