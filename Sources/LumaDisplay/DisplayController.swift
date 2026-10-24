@@ -111,7 +111,7 @@ final class ScreenOverlay {
     @Published var selectedID: CGDirectDisplayID?
     @Published var presets: [DisplayPreset] = []
     @Published var error: String?
-    @Published var status = "Your workspace, in a better light."
+    @Published var status = "Display controls ready."
     @Published var secondsRemaining = 0
     @Published var previewPending = false
     @Published var rollbackFailed = false
@@ -487,6 +487,7 @@ final class ScreenOverlay {
         }
         guard !displays[index].hdrEnabled else { return }
         guard !directBrightness.needsRestore else { error = "Reset all effects to restore the previous direct brightness session first."; return }
+        guard overlayBrightnessSnapshots[id] == nil else { error = "Reset all effects to restore the previous HDR brightness before enabling upscaling again."; return }
         if displays[index].upscalingMethod == .direct {
             guard let screen = screen(for: id), displays[index].directSupported else {
                 error = directBrightness.lastRecoveryError ?? "Direct XDR upscaling requires a supported built-in Apple display."

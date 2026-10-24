@@ -64,7 +64,7 @@ struct Dashboard: View {
                 BrandMark()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("LumaDisplay").font(.system(size: 16, weight: .semibold))
-                    Text("A little more clarity.").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                    Text("Display controls for macOS").font(.system(size: 10)).foregroundStyle(Palette.muted)
                 }
             }.padding(.top, 49).padding(.bottom, 37).padding(.horizontal, 22)
             Text("WORKSPACE").font(.system(size: 9, weight: .bold)).tracking(1.8).foregroundStyle(Palette.muted).padding(.horizontal, 23).padding(.bottom, 12)
@@ -94,7 +94,7 @@ struct Dashboard: View {
             }
             Spacer()
             VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 6) { Circle().fill(Palette.green).frame(width: 5, height: 5); Text("All systems in view").font(.system(size: 11, weight: .medium)) }
+                HStack(spacing: 6) { Circle().fill(Palette.green).frame(width: 5, height: 5); Text("Local display controls").font(.system(size: 11, weight: .medium)) }
                 Text("Changes stay on your Mac.").font(.system(size: 10)).foregroundStyle(Palette.muted)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12)).padding(14)
             Button { showingAbout.toggle() } label: {
@@ -158,13 +158,13 @@ struct Dashboard: View {
 
     private var presetsPage: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text("A workspace for every moment.").font(.system(size: 27, weight: .semibold))
+            Text("Saved display settings").font(.system(size: 27, weight: .semibold))
             Text("Save your displays, resolution, brightness, and warmth together.").font(.system(size: 12)).foregroundStyle(Palette.muted)
             if controller.presets.isEmpty {
                 VStack(spacing: 18) {
                     Image(systemName: "square.stack.3d.up").font(.system(size: 38)).foregroundStyle(Palette.accent)
-                    Text("Make yourself comfortable.").font(.system(size: 19, weight: .medium))
-                    Text("Set up your displays, then save your first preset.\nYour settings will be ready when you need them.").multilineTextAlignment(.center).font(.system(size: 12)).foregroundStyle(Palette.muted)
+                    Text("No saved presets yet").font(.system(size: 19, weight: .medium))
+                    Text("Set up your displays, then save a preset to reuse these settings.").multilineTextAlignment(.center).font(.system(size: 12)).foregroundStyle(Palette.muted)
                     Button("Save current workspace") { showingSave = true }.buttonStyle(.borderedProminent).disabled(controller.displays.isEmpty || controller.previewPending)
                 }.frame(maxWidth: .infinity).padding(.vertical, 66).card()
             }
@@ -188,7 +188,7 @@ struct Dashboard: View {
     private var saveSheet: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) { BrandMark(); Text("Save your workspace").font(.title2.weight(.semibold)) }
-            Text("Capture the current settings for all \(controller.displays.count) connected displays.").font(.callout).foregroundStyle(.secondary)
+            Text("Save the current settings for \(controller.displays.count) connected \(controller.displays.count == 1 ? "display" : "displays").").font(.callout).foregroundStyle(.secondary)
             TextField("Preset name, e.g. Evening focus", text: $presetName).textFieldStyle(.roundedBorder).onSubmit { save() }
             HStack {
                 Spacer()

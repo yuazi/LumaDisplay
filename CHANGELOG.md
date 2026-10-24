@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Reject invalid preset values and duplicate IDs before loading or saving, preserving the existing file when validation fails.
+- Prevent HDR retries from replacing the original brightness snapshot while restoration is still pending.
+- Replace vague dashboard copy with descriptions of the display controls and preset actions, and correct the singular display label in the save dialog.
+
 ## 1.1.1 preview
 
 - Added an install command that moves the build into Applications, registers it with macOS, and archives the previous installation to avoid duplicate app bundles.

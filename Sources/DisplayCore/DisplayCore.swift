@@ -97,12 +97,41 @@ public enum PreviewError: LocalizedError {
 public enum PresetStorage {
     public static func read(from url: URL) throws -> [DisplayPreset] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        return try JSONDecoder().decode([DisplayPreset].self, from: Data(contentsOf: url))
+        let presets = try JSONDecoder().decode([DisplayPreset].self, from: Data(contentsOf: url))
+        try validate(presets)
+        return presets
     }
     public static func write(_ presets: [DisplayPreset], to url: URL) throws {
+        try validate(presets)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(presets).write(to: url, options: .atomic)
+    }
+
+    private static func validate(_ presets: [DisplayPreset]) throws {
+        var presetIDs = Set<UUID>()
+        for preset in presets {
+            guard presetIDs.insert(preset.id).inserted else { throw ValidationError.duplicatePreset }
+            var displayIDs = Set<String>()
+            guard !preset.displays.isEmpty, preset.displays.allSatisfy({ display in
+                let mode = display.mode
+                return !display.uuid.isEmpty && displayIDs.insert(display.uuid).inserted
+                    && mode.width > 0 && mode.height > 0 && mode.pixelWidth > 0 && mode.pixelHeight > 0
+                    && mode.refreshRate >= 0 && Int(exactly: (mode.refreshRate * 100).rounded()) != nil
+                    && (display.brightness.map { (0...1).contains($0) } ?? true)
+                    && (0.2...1).contains(display.dimming) && (0...1).contains(display.warmth)
+            }) else { throw ValidationError.invalidDisplay(preset.name) }
+        }
+    }
+
+    private enum ValidationError: LocalizedError {
+        case duplicatePreset, invalidDisplay(String)
+        var errorDescription: String? {
+            switch self {
+            case .duplicatePreset: return "Two saved presets have the same ID."
+            case .invalidDisplay(let name): return "Preset \"\(name)\" contains missing, duplicate, or invalid display settings."
+            }
+        }
     }
 }
 

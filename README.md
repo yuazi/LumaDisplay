@@ -62,6 +62,8 @@ Overlay percentages describe software gain; direct percentages describe a reques
 
 Presets are stored in `~/Library/Application Support/LumaDisplay/presets.json` and match displays by stable UUID. Applying a preset reports missing displays or unavailable modes before making changes. When a preset changes resolution, brightness and warmth apply after you choose **Keep changes**.
 
+The app checks saved display IDs, resolution values, refresh rates and appearance ranges before loading or writing presets. If a file contains invalid settings, the app reports the problem and leaves the file untouched. Repair or move it, then restart to save presets again.
+
 Unconfirmed display modes are scoped to the app, so macOS restores session settings when the process exits. The rollback timer runs during menu interactions. A failed rollback retains its original settings and offers a retry. Confirmed modes last for the current login session.
 
 Use **Displays → Reset HDR, Dimming & Warmth** or **⌘⇧0** to stop upscaling and remove visual effects. A failed direct restoration retains its recovery record and prevents a normal quit until restoration succeeds. Retry Reset all effects if the display is temporarily unavailable.
@@ -84,7 +86,7 @@ dist/LumaDisplay.app/Contents/MacOS/LumaDisplay --diagnose
 dist/LumaDisplay.app/Contents/MacOS/LumaDisplay --diagnose-hdr
 ```
 
-Both diagnostic commands report display information and exit; pending direct recovery is performed at startup. The fourteen tests cover display-mode rollback, HDR limits, direct brightness units, partial-write recovery, checkpoint failures and preset persistence. XCTest requires a full Xcode installation on systems whose Command Line Tools do not include it. You can select an installed Xcode for a single invocation with `DEVELOPER_DIR`.
+Both diagnostic commands report display information and exit; pending direct recovery is performed at startup. Tests cover display-mode rollback, HDR limits, direct brightness units, partial-write recovery, checkpoint failures and preset persistence, including invalid files and rejected writes. XCTest requires a full Xcode installation on systems whose Command Line Tools do not include it. You can select an installed Xcode for a single invocation with `DEVELOPER_DIR`.
 
 For a rendering smoke test, `--verify-hdr` briefly applies 110% gain for three seconds, reports completed Metal frames, then disables boost and exits. It changes the display during the test.
 

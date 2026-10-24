@@ -41,7 +41,7 @@ struct DisplayDetail: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(display.name).font(.system(size: 27, weight: .semibold)).tracking(-0.7)
-                    Text(display.builtIn ? "Your built-in display. Tuned to you." : "More room for everything you do.").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                    Text(display.builtIn ? "Built-in display settings" : "External display settings").font(.system(size: 12)).foregroundStyle(Palette.muted)
                 }
                 Spacer()
                 HStack(spacing: 6) {
@@ -150,7 +150,7 @@ struct DisplayDetail: View {
 
     private var warmthCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            cardHeading("A warmer workspace", subtitle: "Take the edge off after hours.", icon: "sun.haze")
+            cardHeading("Warmth", subtitle: "Adjust the color tint on this display.", icon: "sun.haze")
             sliderRow("Warmth", value: display.warmth, range: 0...1, low: "snowflake", high: "sun.haze.fill") { controller.setWarmth($0, for: display.id) }
             HStack(spacing: 8) {
                 warmthButton("Neutral", value: 0)
@@ -197,7 +197,7 @@ struct DisplayDetail: View {
     private var resolutionCard: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                cardHeading("Resolution & scaling", subtitle: "The right balance of space and sharpness.", icon: "arrow.up.left.and.arrow.down.right")
+                cardHeading("Resolution & scaling", subtitle: "Choose a resolution and refresh rate.", icon: "arrow.up.left.and.arrow.down.right")
                 Text("\(display.modes.count) modes").font(.system(size: 9)).foregroundStyle(Palette.muted).padding(7).background(.white.opacity(0.035), in: Capsule())
             }
             HStack(spacing: 10) {
