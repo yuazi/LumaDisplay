@@ -42,7 +42,7 @@ open /Applications/LumaDisplay.app
 
 You can also open `Package.swift` in Xcode. The project has no external Swift package dependencies. The build script compiles the app, generates its icon, includes the license notices, and signs the local bundle.
 
-Quit LumaDisplay before installing an update. The install script moves the build into `/Applications`, registers it with macOS, and saves any previous installation as a ZIP under `dist/install-backups`. This keeps one runnable copy and lets application launchers such as Raycast find it. If you cannot write to `/Applications`, pass `~/Applications` to the script instead. Development checks below use a fresh build in `dist` before installation.
+Quit LumaDisplay before installing an update. The install script moves the build into `/Applications`, registers it with macOS so launchers such as Raycast can find it, and saves any previous installation as a ZIP under `dist/install-backups`. If you cannot write to `/Applications`, pass `~/Applications` to the script instead. The development checks below run the fresh build in `dist`, so run them before installing.
 
 ## Brightness upscaling
 
@@ -54,9 +54,9 @@ Choose **HDR overlay** or **Direct XDR** under Brightness upscaling. Move the ma
 
 Both methods start off and stop when the app quits or the Mac or display sleeps. Presets do not enable them. External HDR monitors must already have HDR enabled in macOS Display Settings; an SDR-only monitor cannot gain HDR capability through the app. Brightness-key changes stop direct mode instead of repeatedly overriding the system adjustment.
 
-The overlay follows other apps into full-screen Spaces. Version 1.0.1 fixes an issue where Netflix in Comet lost the boost on entering full screen and regained it on exit. Protected video and hardware-specific playback paths may still behave differently; keeping an overlay visible does not guarantee every video surface can be amplified.
+The overlay follows other apps into full-screen Spaces. Protected video and some hardware playback paths may still not get brighter, even while the overlay is visible.
 
-Overlay percentages describe software gain; direct percentages describe a requested driver target. Neither measures physical nits. Upscaling can affect HDR highlights and increase power use. Turn it off for color-critical work and accurate HDR viewing. Both methods are experimental; the display and macOS determine the available output.
+Overlay percentages are software gain, and direct percentages are a target sent to the driver. Neither is a measurement in nits. Upscaling can change how HDR highlights look and uses more power, so turn it off for color-critical work and accurate HDR viewing. Both methods are experimental, and the display and macOS decide how much extra brightness is available.
 
 ## Presets and recovery
 
@@ -64,7 +64,7 @@ Presets are stored in `~/Library/Application Support/LumaDisplay/presets.json` a
 
 The app checks saved display IDs, resolution values, refresh rates and appearance ranges before loading or writing presets. If a file contains invalid settings, the app reports the problem and leaves the file untouched. Repair or move it, then restart to save presets again.
 
-Unconfirmed display modes are scoped to the app, so macOS restores session settings when the process exits. The rollback timer runs during menu interactions. A failed rollback retains its original settings and offers a retry. Confirmed modes last for the current login session.
+Until you keep a display mode, it applies only while the app runs, so macOS restores the previous mode if the app exits. The 15-second rollback timer keeps running while menus are open. If a rollback fails, the app keeps the original settings and offers a retry. Kept modes last for the current login session.
 
 Use **Displays → Reset HDR, Dimming & Warmth** or **⌘⇧0** to stop upscaling and remove visual effects. A failed direct restoration retains its recovery record and prevents a normal quit until restoration succeeds. Retry Reset all effects if the display is temporarily unavailable.
 
@@ -86,7 +86,7 @@ dist/LumaDisplay.app/Contents/MacOS/LumaDisplay --diagnose
 dist/LumaDisplay.app/Contents/MacOS/LumaDisplay --diagnose-hdr
 ```
 
-Both diagnostic commands report display information and exit; pending direct recovery is performed at startup. Tests cover display-mode rollback, HDR limits, direct brightness units, partial-write recovery, checkpoint failures and preset persistence, including invalid files and rejected writes. XCTest requires a full Xcode installation on systems whose Command Line Tools do not include it. You can select an installed Xcode for a single invocation with `DEVELOPER_DIR`.
+Both diagnostic commands print display information and exit. Any pending direct-mode recovery runs at startup first. Tests cover display-mode rollback, HDR limits, direct brightness units, partial-write recovery, checkpoint failures and preset persistence, including invalid files and rejected writes. XCTest requires a full Xcode installation on systems whose Command Line Tools do not include it. You can select an installed Xcode for a single invocation with `DEVELOPER_DIR`.
 
 For a rendering smoke test, `--verify-hdr` briefly applies 110% gain for three seconds, reports completed Metal frames, then disables boost and exits. It changes the display during the test.
 
@@ -98,7 +98,7 @@ To check full-screen transitions, first disable HDR in any other running LumaDis
 dist/LumaDisplay.app/Contents/MacOS/LumaDisplay --verify-hdr --verify-hdr-seconds 60
 ```
 
-Enter and exit full screen in the affected app. The test reports whether its overlay is on the active Space and visible, whether it takes focus, and whether Metal frames continue to complete. It automatically disables its boost and exits after the requested duration (3–60 seconds). These diagnostics do not measure luminance or inspect video pixels.
+Enter and exit full screen in the affected app. The test reports whether its overlay is on the active Space and visible, whether it takes focus, and whether Metal frames continue to complete. It disables its boost and exits after the requested duration (3 to 60 seconds). These diagnostics don't measure luminance or inspect video pixels.
 
 ## License and credits
 
